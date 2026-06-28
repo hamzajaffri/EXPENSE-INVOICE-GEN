@@ -1,0 +1,6 @@
+{
+  "name": "Business Toolkit Pro",
+  "description": "Offline-first Business Management app for freelancers, retailers, and distributors to manage inventory, invoices, and expenses.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
