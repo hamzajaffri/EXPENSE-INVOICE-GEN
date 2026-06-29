@@ -56,6 +56,12 @@ import com.example.viewmodel.BusinessViewModel
 import kotlinx.coroutines.launch
 import java.text.DateFormat
 import java.util.Date
+import android.graphics.pdf.PdfDocument
+import android.graphics.Paint
+import android.graphics.Typeface
+import androidx.core.content.FileProvider
+import java.io.File
+import java.io.FileOutputStream
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1864,57 +1870,119 @@ fun InvoiceMakerScreen(
 
         // Print & Export Operations
         item {
-            Button(
-                onClick = {
-                    if (customerName.isBlank()) {
-                        Toast.makeText(context, "Customer Name is required to generate invoice", Toast.LENGTH_SHORT).show()
-                        return@Button
-                    }
-                    if (draftItems.isEmpty()) {
-                        Toast.makeText(context, "Invoice must contain at least one item", Toast.LENGTH_SHORT).show()
-                        return@Button
-                    }
-
-                    val finalInvoice = Invoice(
-                        invoiceNumber = "INV-${System.currentTimeMillis().toString().takeLast(6)}",
-                        customerId = selectedCustomerId,
-                        customerName = customerName,
-                        customerPhone = customerPhone,
-                        discount = discount.toDoubleOrNull() ?: 0.0,
-                        taxRate = taxRate.toDoubleOrNull() ?: 0.0,
-                        shipping = shipping.toDoubleOrNull() ?: 0.0,
-                        paymentMethod = paymentMethod,
-                        isPending = isPendingPayment
-                    )
-
-                    // Issue actual HTML system print process directly
-                    printInvoice(
-                        context = context,
-                        invoice = finalInvoice,
-                        items = draftItems,
-                        currency = currencySymbol,
-                        businessName = businessName,
-                        businessPhone = businessPhone,
-                        businessEmail = businessEmail,
-                        businessAddress = businessAddress,
-                        businessBranding = businessBranding,
-                        businessLogo = businessLogo
-                    )
-
-                    // Write to Local Room Database
-                    viewModel.createInvoice(finalInvoice)
-
-                    // Clear local canvas signature points
-                    signaturePoints.clear()
-
-                    Toast.makeText(context, "Invoice Printed and Saved Successfully!", Toast.LENGTH_LONG).show()
-                },
+            Column(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp)
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Icon(Icons.Default.Print, contentDescription = null)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Print / Export PDF Invoice")
+                Button(
+                    onClick = {
+                        if (customerName.isBlank()) {
+                            Toast.makeText(context, "Customer Name is required to generate invoice", Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
+                        if (draftItems.isEmpty()) {
+                            Toast.makeText(context, "Invoice must contain at least one item", Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
+
+                        val finalInvoice = Invoice(
+                            invoiceNumber = "INV-${System.currentTimeMillis().toString().takeLast(6)}",
+                            customerId = selectedCustomerId,
+                            customerName = customerName,
+                            customerPhone = customerPhone,
+                            discount = discount.toDoubleOrNull() ?: 0.0,
+                            taxRate = taxRate.toDoubleOrNull() ?: 0.0,
+                            shipping = shipping.toDoubleOrNull() ?: 0.0,
+                            paymentMethod = paymentMethod,
+                            isPending = isPendingPayment
+                        )
+
+                        // Issue actual HTML system print process directly
+                        printInvoice(
+                            context = context,
+                            invoice = finalInvoice,
+                            items = draftItems,
+                            currency = currencySymbol,
+                            businessName = businessName,
+                            businessPhone = businessPhone,
+                            businessEmail = businessEmail,
+                            businessAddress = businessAddress,
+                            businessBranding = businessBranding,
+                            businessLogo = businessLogo
+                        )
+
+                        // Write to Local Room Database
+                        viewModel.createInvoice(finalInvoice)
+
+                        // Clear local canvas signature points
+                        signaturePoints.clear()
+
+                        Toast.makeText(context, "Invoice Printed and Saved Successfully!", Toast.LENGTH_LONG).show()
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(Icons.Default.Print, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Print / Export PDF Invoice")
+                }
+
+                FilledTonalButton(
+                    onClick = {
+                        if (customerName.isBlank()) {
+                            Toast.makeText(context, "Customer Name is required to share invoice", Toast.LENGTH_SHORT).show()
+                            return@FilledTonalButton
+                        }
+                        if (draftItems.isEmpty()) {
+                            Toast.makeText(context, "Invoice must contain at least one item", Toast.LENGTH_SHORT).show()
+                            return@FilledTonalButton
+                        }
+
+                        val finalInvoice = Invoice(
+                            invoiceNumber = "INV-${System.currentTimeMillis().toString().takeLast(6)}",
+                            customerId = selectedCustomerId,
+                            customerName = customerName,
+                            customerPhone = customerPhone,
+                            discount = discount.toDoubleOrNull() ?: 0.0,
+                            taxRate = taxRate.toDoubleOrNull() ?: 0.0,
+                            shipping = shipping.toDoubleOrNull() ?: 0.0,
+                            paymentMethod = paymentMethod,
+                            isPending = isPendingPayment
+                        )
+
+                        // Share direct PDF document
+                        shareInvoicePdf(
+                            context = context,
+                            invoice = finalInvoice,
+                            items = draftItems,
+                            currency = currencySymbol,
+                            signaturePoints = signaturePoints.toList(),
+                            businessName = businessName,
+                            businessPhone = businessPhone,
+                            businessEmail = businessEmail,
+                            businessAddress = businessAddress,
+                            businessBranding = businessBranding
+                        )
+
+                        // Write to Local Room Database
+                        viewModel.createInvoice(finalInvoice)
+
+                        // Clear local canvas signature points
+                        signaturePoints.clear()
+
+                        Toast.makeText(context, "Invoice Saved and Shared Successfully!", Toast.LENGTH_LONG).show()
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.filledTonalButtonColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                ) {
+                    Icon(Icons.Default.Share, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Share PDF Invoice")
+                }
             }
         }
     }
@@ -2051,6 +2119,320 @@ fun printInvoice(
         }
     }
     webView.loadDataWithBaseURL(null, htmlContent, "text/html", "utf-8", null)
+}
+
+// Generates and shares a beautiful PDF document natively using Android PdfDocument and standard system Share Sheet
+fun shareInvoicePdf(
+    context: Context,
+    invoice: Invoice,
+    items: List<InvoiceItem>,
+    currency: String,
+    signaturePoints: List<androidx.compose.ui.geometry.Offset>,
+    businessName: String = "Business Toolkit Pro",
+    businessPhone: String = "",
+    businessEmail: String = "",
+    businessAddress: String = "",
+    businessBranding: String = ""
+) {
+    try {
+        val pdfDocument = PdfDocument()
+        val pageInfo = PdfDocument.PageInfo.Builder(595, 842, 1).create()
+        val page = pdfDocument.startPage(pageInfo)
+        val canvas: android.graphics.Canvas = page.canvas
+
+        val paintText = Paint().apply {
+            color = android.graphics.Color.BLACK
+            textSize = 12f
+            isAntiAlias = true
+        }
+        val paintSecondary = Paint().apply {
+            color = android.graphics.Color.DKGRAY
+            textSize = 9f
+            isAntiAlias = true
+        }
+
+        // Draw header accent stripe
+        val paintAccent = Paint().apply {
+            color = android.graphics.Color.parseColor("#6750A4")
+            isAntiAlias = true
+        }
+        canvas.drawRect(0f, 0f, 595f, 15f, paintAccent)
+
+        // 1. Business Header Info
+        paintText.apply {
+            textSize = 18f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            color = android.graphics.Color.parseColor("#6750A4")
+        }
+        canvas.drawText(businessName, 40f, 50f, paintText)
+
+        paintSecondary.apply {
+            textSize = 10f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.ITALIC)
+            color = android.graphics.Color.GRAY
+        }
+        val sub = if (businessBranding.isNotEmpty()) businessBranding else "Digital Ledger & Invoice Solutions"
+        canvas.drawText(sub, 40f, 65f, paintSecondary)
+
+        paintSecondary.apply {
+            textSize = 9f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
+            color = android.graphics.Color.parseColor("#333333")
+        }
+        var headerY = 80f
+        if (businessPhone.isNotEmpty()) {
+            canvas.drawText("Phone: $businessPhone", 40f, headerY, paintSecondary)
+            headerY += 14f
+        }
+        if (businessEmail.isNotEmpty()) {
+            canvas.drawText("Email: $businessEmail", 40f, headerY, paintSecondary)
+            headerY += 14f
+        }
+        if (businessAddress.isNotEmpty()) {
+            canvas.drawText("Address: $businessAddress", 40f, headerY, paintSecondary)
+            headerY += 14f
+        }
+
+        // 2. Invoice Meta (Top Right)
+        paintText.apply {
+            textSize = 24f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            color = android.graphics.Color.parseColor("#6750A4")
+        }
+        canvas.drawText("INVOICE", 400f, 50f, paintText)
+
+        paintSecondary.apply {
+            textSize = 10f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            color = android.graphics.Color.BLACK
+        }
+        canvas.drawText("Invoice #: ${invoice.invoiceNumber}", 400f, 70f, paintSecondary)
+        
+        paintSecondary.apply {
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
+            color = android.graphics.Color.DKGRAY
+        }
+        val dateStr = DateFormat.getDateInstance().format(Date(invoice.date))
+        canvas.drawText("Date: $dateStr", 400f, 85f, paintSecondary)
+
+        // Divider
+        val paintLine = Paint().apply {
+            color = android.graphics.Color.parseColor("#CCCCCC")
+            strokeWidth = 1f
+        }
+        val midDividerY = if (headerY > 100f) headerY + 10f else 110f
+        canvas.drawLine(40f, midDividerY, 555f, midDividerY, paintLine)
+
+        // 3. Invoiced To (Customer info)
+        var clientY = midDividerY + 25f
+        paintText.apply {
+            textSize = 11f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            color = android.graphics.Color.parseColor("#21005D")
+        }
+        canvas.drawText("Invoiced To:", 40f, clientY, paintText)
+        canvas.drawText("Payment Info:", 350f, clientY, paintText)
+
+        paintSecondary.apply {
+            textSize = 9.5f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
+            color = android.graphics.Color.BLACK
+        }
+        clientY += 16f
+        canvas.drawText("Name: ${invoice.customerName}", 40f, clientY, paintSecondary)
+        canvas.drawText("Method: ${invoice.paymentMethod}", 350f, clientY, paintSecondary)
+
+        clientY += 14f
+        canvas.drawText("Phone: ${invoice.customerPhone ?: "N/A"}", 40f, clientY, paintSecondary)
+        val statusText = if (invoice.isPending) "Pending Action" else "Fully Cleared"
+        canvas.drawText("Status: $statusText", 350f, clientY, paintSecondary)
+
+        // Divider
+        clientY += 15f
+        canvas.drawLine(40f, clientY, 555f, clientY, paintLine)
+
+        // 4. Items Table
+        var tableY = clientY + 15f
+        // Header background block
+        val paintHeaderBg = Paint().apply {
+            color = android.graphics.Color.parseColor("#F3EDF7")
+        }
+        canvas.drawRect(40f, tableY, 555f, tableY + 22f, paintHeaderBg)
+
+        paintText.apply {
+            textSize = 9.5f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            color = android.graphics.Color.parseColor("#21005D")
+        }
+        canvas.drawText("Item Name", 48f, tableY + 15f, paintText)
+        canvas.drawText("Qty", 320f, tableY + 15f, paintText)
+        canvas.drawText("Unit Price", 400f, tableY + 15f, paintText)
+        canvas.drawText("Total", 495f, tableY + 15f, paintText)
+
+        tableY += 22f
+
+        paintSecondary.apply {
+            textSize = 9f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
+            color = android.graphics.Color.parseColor("#222222")
+        }
+
+        val rawSubtotal = items.sumOf { it.sellingPrice * it.quantity }
+        val discountAmount = invoice.discount
+        val taxedAmount = (rawSubtotal - discountAmount) * (invoice.taxRate / 100)
+        val grandTotal = rawSubtotal - discountAmount + taxedAmount + invoice.shipping
+
+        for (item in items) {
+            tableY += 20f
+            var pName = item.productName
+            if (pName.length > 38) {
+                pName = pName.take(35) + "..."
+            }
+            canvas.drawText(pName, 48f, tableY, paintSecondary)
+            canvas.drawText(item.quantity.toString(), 320f, tableY, paintSecondary)
+            canvas.drawText("$currency${String.format("%.2f", item.sellingPrice)}", 400f, tableY, paintSecondary)
+            canvas.drawText("$currency${String.format("%.2f", item.sellingPrice * item.quantity)}", 495f, tableY, paintSecondary)
+            
+            val paintThinLine = Paint().apply {
+                color = android.graphics.Color.parseColor("#EEEEEE")
+                strokeWidth = 0.5f
+            }
+            canvas.drawLine(40f, tableY + 5f, 555f, tableY + 5f, paintThinLine)
+            tableY += 5f
+        }
+
+        // Summary Block on Right
+        var summaryY = tableY + 25f
+        paintSecondary.apply {
+            textSize = 9.5f
+            color = android.graphics.Color.parseColor("#444444")
+        }
+        
+        val summaryXLabel = 350f
+        val summaryXVal = 495f
+
+        canvas.drawText("Subtotal:", summaryXLabel, summaryY, paintSecondary)
+        canvas.drawText("$currency${String.format("%.2f", rawSubtotal)}", summaryXVal, summaryY, paintSecondary)
+
+        summaryY += 15f
+        canvas.drawText("Discount:", summaryXLabel, summaryY, paintSecondary)
+        canvas.drawText("-$currency${String.format("%.2f", discountAmount)}", summaryXVal, summaryY, paintSecondary)
+
+        summaryY += 15f
+        canvas.drawText("Tax (${invoice.taxRate}%):", summaryXLabel, summaryY, paintSecondary)
+        canvas.drawText("$currency${String.format("%.2f", taxedAmount)}", summaryXVal, summaryY, paintSecondary)
+
+        summaryY += 15f
+        canvas.drawText("Shipping:", summaryXLabel, summaryY, paintSecondary)
+        canvas.drawText("$currency${String.format("%.2f", invoice.shipping)}", summaryXVal, summaryY, paintSecondary)
+
+        summaryY += 18f
+        paintText.apply {
+            textSize = 12f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            color = android.graphics.Color.parseColor("#1565C0")
+        }
+        canvas.drawText("Grand Total:", summaryXLabel, summaryY, paintText)
+        canvas.drawText("$currency${String.format("%.2f", grandTotal)}", summaryXVal, summaryY, paintText)
+
+        // 5. Draw Signature (if any)
+        if (signaturePoints.isNotEmpty()) {
+            val sigStartY = summaryY + 40f
+            paintText.apply {
+                textSize = 9.5f
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                color = android.graphics.Color.BLACK
+            }
+            canvas.drawText("Digital Signature Captured:", 40f, sigStartY, paintText)
+
+            val paintSig = Paint().apply {
+                color = android.graphics.Color.BLUE
+                strokeWidth = 2f
+                style = Paint.Style.STROKE
+                strokeCap = Paint.Cap.ROUND
+                strokeJoin = Paint.Join.ROUND
+                isAntiAlias = true
+            }
+
+            val xMin = signaturePoints.minOf { it.x }
+            val xMax = signaturePoints.maxOf { it.x }
+            val yMin = signaturePoints.minOf { it.y }
+            val yMax = signaturePoints.maxOf { it.y }
+
+            val sigWidth = if (xMax - xMin > 0) xMax - xMin else 1f
+            val sigHeight = if (yMax - yMin > 0) yMax - yMin else 1f
+
+            val targetWidth = 160f
+            val targetHeight = 60f
+
+            val scaleX = targetWidth / sigWidth
+            val scaleY = targetHeight / sigHeight
+            val scale = minOf(scaleX, scaleY)
+
+            val startX = 40f
+            val startY = sigStartY + 10f
+
+            for (i in 0 until signaturePoints.size - 1) {
+                val pt1 = signaturePoints[i]
+                val pt2 = signaturePoints[i + 1]
+
+                if ((pt1 - pt2).getDistanceSquared() < 250000) {
+                    val drawX1 = startX + (pt1.x - xMin) * scale
+                    val drawY1 = startY + (pt1.y - yMin) * scale
+                    val drawX2 = startX + (pt2.x - xMin) * scale
+                    val drawY2 = startY + (pt2.y - yMin) * scale
+                    canvas.drawLine(drawX1, drawY1, drawX2, drawY2, paintSig)
+                }
+            }
+            
+            canvas.drawLine(40f, sigStartY + 75f, 200f, sigStartY + 75f, paintLine)
+            paintSecondary.apply {
+                textSize = 8f
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
+                color = android.graphics.Color.GRAY
+            }
+            canvas.drawText("Authorized Representative", 40f, sigStartY + 85f, paintSecondary)
+        }
+
+        // 6. Footer section
+        val footerY = 800f
+        canvas.drawLine(40f, footerY - 10f, 555f, footerY - 10f, paintLine)
+        paintSecondary.apply {
+            textSize = 8.5f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.ITALIC)
+            color = android.graphics.Color.GRAY
+        }
+        val footerText = "This app powered by Abitalib groups and all copyrights reserved by abitalib groups"
+        val textWidth = paintSecondary.measureText(footerText)
+        canvas.drawText(footerText, (595f - textWidth) / 2f, footerY, paintSecondary)
+
+        pdfDocument.finishPage(page)
+
+        // Save file to app cache directory
+        val fileName = "Invoice_${invoice.invoiceNumber}.pdf"
+        val file = File(context.cacheDir, fileName)
+        val fileOutputStream = FileOutputStream(file)
+        pdfDocument.writeTo(fileOutputStream)
+        pdfDocument.close()
+        fileOutputStream.close()
+
+        // Share file using Intent and FileProvider
+        val authority = "${context.packageName}.fileprovider"
+        val uri: Uri = FileProvider.getUriForFile(context, authority, file)
+
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "application/pdf"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            putExtra(Intent.EXTRA_SUBJECT, "Invoice ${invoice.invoiceNumber} from $businessName")
+            putExtra(Intent.EXTRA_TEXT, "Please find attached the invoice ${invoice.invoiceNumber} for your recent purchase.")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(Intent.createChooser(intent, "Share Invoice PDF"))
+
+    } catch (e: Exception) {
+        e.printStackTrace()
+        Toast.makeText(context, "Error generating or sharing PDF: ${e.message}", Toast.LENGTH_LONG).show()
+    }
 }
 
 // --- 5. CUSTOMERS SCREEN ---
