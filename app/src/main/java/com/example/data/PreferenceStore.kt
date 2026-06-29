@@ -25,6 +25,7 @@ class PreferenceStore(private val context: Context) {
         val BUSINESS_EMAIL_KEY = stringPreferencesKey("business_email")
         val BUSINESS_ADDRESS_KEY = stringPreferencesKey("business_address")
         val BUSINESS_BRANDING_KEY = stringPreferencesKey("business_branding")
+        val BUSINESS_LOGO_KEY = stringPreferencesKey("business_logo")
 
         // Google Drive Backup info
         val GOOGLE_DRIVE_CONNECTED_KEY = booleanPreferencesKey("google_drive_connected")
@@ -74,6 +75,10 @@ class PreferenceStore(private val context: Context) {
 
     val businessBrandingFlow: Flow<String> = context.dataStore.data.map { preferences ->
         preferences[BUSINESS_BRANDING_KEY] ?: ""
+    }
+
+    val businessLogoFlow: Flow<String> = context.dataStore.data.map { preferences ->
+        preferences[BUSINESS_LOGO_KEY] ?: ""
     }
 
     // Google Drive flows
@@ -126,13 +131,14 @@ class PreferenceStore(private val context: Context) {
     }
 
     // Business Profile Setters
-    suspend fun setBusinessProfile(name: String, phone: String, email: String, address: String, branding: String) {
+    suspend fun setBusinessProfile(name: String, phone: String, email: String, address: String, branding: String, logo: String) {
         context.dataStore.edit { preferences ->
             preferences[BUSINESS_NAME_KEY] = name
             preferences[BUSINESS_PHONE_KEY] = phone
             preferences[BUSINESS_EMAIL_KEY] = email
             preferences[BUSINESS_ADDRESS_KEY] = address
             preferences[BUSINESS_BRANDING_KEY] = branding
+            preferences[BUSINESS_LOGO_KEY] = logo
         }
     }
 

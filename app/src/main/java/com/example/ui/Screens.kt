@@ -8,6 +8,9 @@ import android.print.PrintManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
+import coil.compose.AsyncImage
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
@@ -93,7 +96,7 @@ fun AppNavigationShell(
                 ModalDrawerSheet {
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
-                        text = "Business Toolkit Pro",
+                        text = "InvoiceMate",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
@@ -162,6 +165,27 @@ fun AppNavigationShell(
                         selected = currentScreen == "settings",
                         onClick = { navigateTo("settings") }
                     )
+
+                    Spacer(modifier = Modifier.weight(1f))
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 24.dp, start = 16.dp, end = 16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "This app powered by Abitalib groups",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                            textAlign = TextAlign.Center
+                        )
+                        Text(
+                            text = "All copyrights reserved by abitalib groups",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                            textAlign = TextAlign.Center
+                        )
+                    }
                 }
             }
         ) {
@@ -1361,16 +1385,20 @@ fun InvoiceMakerScreen(
     val businessEmail by viewModel.businessEmail.collectAsStateWithLifecycle()
     val businessAddress by viewModel.businessAddress.collectAsStateWithLifecycle()
     val businessBranding by viewModel.businessBranding.collectAsStateWithLifecycle()
+    val businessLogo by viewModel.businessLogo.collectAsStateWithLifecycle()
 
-    var customerName by remember { mutableStateOf("") }
-    var customerPhone by remember { mutableStateOf("") }
-    var selectedCustomerId by remember { mutableStateOf<Int?>(null) }
+    val customerName by viewModel.draftCustomerName.collectAsStateWithLifecycle()
+    val customerPhone by viewModel.draftCustomerPhone.collectAsStateWithLifecycle()
+    val selectedCustomerId by viewModel.draftSelectedCustomerId.collectAsStateWithLifecycle()
 
-    var taxRate by remember { mutableStateOf("18.0") }
-    var discount by remember { mutableStateOf("0.0") }
-    var shipping by remember { mutableStateOf("0.0") }
-    var paymentMethod by remember { mutableStateOf("Cash") }
-    var isPendingPayment by remember { mutableStateOf(false) }
+    val taxRate by viewModel.draftTaxRate.collectAsStateWithLifecycle()
+    val discount by viewModel.draftDiscount.collectAsStateWithLifecycle()
+    val shipping by viewModel.draftShipping.collectAsStateWithLifecycle()
+    val paymentMethod by viewModel.draftPaymentMethod.collectAsStateWithLifecycle()
+    val isPendingPayment by viewModel.draftIsPendingPayment.collectAsStateWithLifecycle()
+
+    var productSearchQuery by remember { mutableStateOf("") }
+    var showBarcodeScannerSimulation by remember { mutableStateOf(false) }
 
     // Handwritten digital signature points list
     val signaturePoints = remember { mutableStateListOf<Offset>() }
@@ -1429,13 +1457,13 @@ fun InvoiceMakerScreen(
                                     selected = isSelected,
                                     onClick = {
                                         if (isSelected) {
-                                            selectedCustomerId = null
-                                            customerName = ""
-                                            customerPhone = ""
+                                            viewModel.updateDraftSelectedCustomerId(null)
+                                            viewModel.updateDraftCustomerName("")
+                                            viewModel.updateDraftCustomerPhone("")
                                         } else {
-                                            selectedCustomerId = cust.id
-                                            customerName = cust.name
-                                            customerPhone = cust.phone
+                                            viewModel.updateDraftSelectedCustomerId(cust.id)
+                                            viewModel.updateDraftCustomerName(cust.name)
+                                            viewModel.updateDraftCustomerPhone(cust.phone)
                                         }
                                     },
                                     label = { Text(cust.name) }
@@ -1447,14 +1475,14 @@ fun InvoiceMakerScreen(
 
                     OutlinedTextField(
                         value = customerName,
-                        onValueChange = { customerName = it },
+                        onValueChange = { viewModel.updateDraftCustomerName(it) },
                         label = { Text("Customer Name *") },
                         modifier = Modifier.fillMaxWidth()
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     OutlinedTextField(
                         value = customerPhone,
-                        onValueChange = { customerPhone = it },
+                        onValueChange = { viewModel.updateDraftCustomerPhone(it) },
                         label = { Text("Customer Phone Number") },
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -1470,19 +1498,198 @@ fun InvoiceMakerScreen(
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text("Products in Invoice", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
 
                     if (products.isEmpty()) {
                         Text("Please add products in the 'Products' tab first.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                     } else {
-                        // Quick product add selector
-                        Text("Tap product to add to invoice:", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            items(products) { prod ->
-                                SuggestionChip(
-                                    onClick = { viewModel.addDraftItem(prod, 1) },
-                                    label = { Text("${prod.name} ($currencySymbol${prod.sellingPrice})") }
+                        // Real-time Search & Barcode scanning panel
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedTextField(
+                                value = productSearchQuery,
+                                onValueChange = { productSearchQuery = it },
+                                label = { Text("POS Search or Scan Barcode...") },
+                                placeholder = { Text("Search by Name, Category, SKU...") },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(12.dp),
+                                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                                trailingIcon = {
+                                    if (productSearchQuery.isNotEmpty()) {
+                                        IconButton(onClick = { productSearchQuery = "" }) {
+                                            Icon(Icons.Default.Clear, contentDescription = null)
+                                        }
+                                    }
+                                }
+                            )
+
+                            IconButton(
+                                onClick = { showBarcodeScannerSimulation = true },
+                                modifier = Modifier
+                                    .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(12.dp))
+                                    .size(56.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.QrCodeScanner,
+                                    contentDescription = "Simulated Laser Barcode Scanner",
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer
                                 )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Filtered suggestions
+                        val filteredProducts = products.filter {
+                            it.name.contains(productSearchQuery, ignoreCase = true) ||
+                            it.category.contains(productSearchQuery, ignoreCase = true) ||
+                            (it.barcode ?: "").contains(productSearchQuery, ignoreCase = true) ||
+                            (it.qrCode ?: "").contains(productSearchQuery, ignoreCase = true)
+                        }
+
+                        Text(
+                            text = if (productSearchQuery.isEmpty()) "Tap product to add to invoice:" else "Search Results (${filteredProducts.size}):",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        if (filteredProducts.isEmpty()) {
+                            Text("No matching products found.", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
+                        } else {
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                items(filteredProducts) { prod ->
+                                    SuggestionChip(
+                                        onClick = {
+                                            viewModel.addDraftItem(prod, 1)
+                                            productSearchQuery = "" // reset search on add for fast POS workflow
+                                        },
+                                        label = { Text("${prod.name} ($currencySymbol${prod.sellingPrice})") }
+                                    )
+                                }
+                            }
+                        }
+
+                        // Simulated Barcode Scanner Camera view modal dialog
+                        if (showBarcodeScannerSimulation) {
+                            Dialog(onDismissRequest = { showBarcodeScannerSimulation = false }) {
+                                Card(
+                                    shape = RoundedCornerShape(24.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(16.dp),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(20.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Text(
+                                            text = "📷 BARCODE / QR LASER SCANNER",
+                                            fontWeight = FontWeight.Black,
+                                            style = MaterialTheme.typography.titleMedium,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                        Spacer(modifier = Modifier.height(12.dp))
+
+                                        // Camera Scanner Simulator Screen
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(160.dp)
+                                                .clip(RoundedCornerShape(16.dp))
+                                                .background(Color.Black),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            // Glowing Red Laser scanning simulation line
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .height(3.dp)
+                                                    .background(Color.Red)
+                                            )
+
+                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                Icon(
+                                                    Icons.Default.QrCodeScanner,
+                                                    contentDescription = null,
+                                                    tint = Color.White.copy(alpha = 0.35f),
+                                                    modifier = Modifier.size(56.dp)
+                                                )
+                                                Spacer(modifier = Modifier.height(8.dp))
+                                                Text(
+                                                    "Position Barcode inside laser target window",
+                                                    color = Color.White.copy(alpha = 0.65f),
+                                                    fontSize = 11.sp,
+                                                    textAlign = TextAlign.Center
+                                                )
+                                            }
+                                        }
+
+                                        Spacer(modifier = Modifier.height(16.dp))
+
+                                        Text(
+                                            "Select product to simulate real-time laser scan gun trigger:",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.outline,
+                                            textAlign = TextAlign.Center
+                                        )
+                                        Spacer(modifier = Modifier.height(10.dp))
+
+                                        LazyColumn(
+                                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                                            modifier = Modifier.height(160.dp)
+                                        ) {
+                                            val productsWithBarcodes = products.filter { !it.barcode.isNullOrEmpty() }
+                                            if (productsWithBarcodes.isEmpty()) {
+                                                item {
+                                                    Text(
+                                                        "No products with barcodes set yet. Tap a product in Inventory to add barcodes/SKUs.",
+                                                        fontSize = 11.sp,
+                                                        color = MaterialTheme.colorScheme.error,
+                                                        textAlign = TextAlign.Center
+                                                    )
+                                                }
+                                            } else {
+                                                items(productsWithBarcodes) { prod ->
+                                                    Card(
+                                                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                                                        shape = RoundedCornerShape(10.dp),
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .clickable {
+                                                                viewModel.addDraftItem(prod, 1)
+                                                                Toast.makeText(context, "Beep! Scanned: ${prod.name} [${prod.barcode}]", Toast.LENGTH_SHORT).show()
+                                                                showBarcodeScannerSimulation = false
+                                                            }
+                                                    ) {
+                                                        Row(
+                                                            modifier = Modifier.padding(10.dp),
+                                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                                            verticalAlignment = Alignment.CenterVertically
+                                                        ) {
+                                                            Column {
+                                                                Text(prod.name, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                                                Text("Barcode / SKU: ${prod.barcode}", fontSize = 10.sp, color = MaterialTheme.colorScheme.primary)
+                                                            }
+                                                            Icon(Icons.Default.AddCircle, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        Spacer(modifier = Modifier.height(16.dp))
+
+                                        TextButton(onClick = { showBarcodeScannerSimulation = false }) {
+                                            Text("Close Scanner")
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -1544,13 +1751,13 @@ fun InvoiceMakerScreen(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(
                             value = taxRate,
-                            onValueChange = { taxRate = it },
+                            onValueChange = { viewModel.updateDraftTaxRate(it) },
                             label = { Text("Tax Rate %") },
                             modifier = Modifier.weight(1f)
                         )
                         OutlinedTextField(
                             value = discount,
-                            onValueChange = { discount = it },
+                            onValueChange = { viewModel.updateDraftDiscount(it) },
                             label = { Text("Discount Amount") },
                             modifier = Modifier.weight(1f)
                         )
@@ -1559,13 +1766,13 @@ fun InvoiceMakerScreen(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(
                             value = shipping,
-                            onValueChange = { shipping = it },
+                            onValueChange = { viewModel.updateDraftShipping(it) },
                             label = { Text("Shipping Fee") },
                             modifier = Modifier.weight(1f)
                         )
                         OutlinedTextField(
                             value = paymentMethod,
-                            onValueChange = { paymentMethod = it },
+                            onValueChange = { viewModel.updateDraftPaymentMethod(it) },
                             label = { Text("Payment Method") },
                             modifier = Modifier.weight(1f)
                         )
@@ -1579,7 +1786,7 @@ fun InvoiceMakerScreen(
                     ) {
                         Checkbox(
                             checked = isPendingPayment,
-                            onCheckedChange = { isPendingPayment = it }
+                            onCheckedChange = { viewModel.updateDraftIsPendingPayment(it) }
                         )
                         Text("Mark Invoice as Pending Payment", style = MaterialTheme.typography.bodyMedium)
                     }
@@ -1690,18 +1897,14 @@ fun InvoiceMakerScreen(
                         businessPhone = businessPhone,
                         businessEmail = businessEmail,
                         businessAddress = businessAddress,
-                        businessBranding = businessBranding
+                        businessBranding = businessBranding,
+                        businessLogo = businessLogo
                     )
 
                     // Write to Local Room Database
                     viewModel.createInvoice(finalInvoice)
 
-                    // Clear inputs after issuance
-                    customerName = ""
-                    customerPhone = ""
-                    discount = "0.0"
-                    shipping = "0.0"
-                    isPendingPayment = false
+                    // Clear local canvas signature points
                     signaturePoints.clear()
 
                     Toast.makeText(context, "Invoice Printed and Saved Successfully!", Toast.LENGTH_LONG).show()
@@ -1727,7 +1930,8 @@ fun printInvoice(
     businessPhone: String = "",
     businessEmail: String = "",
     businessAddress: String = "",
-    businessBranding: String = ""
+    businessBranding: String = "",
+    businessLogo: String = ""
 ) {
     val printManager = context.getSystemService(Context.PRINT_SERVICE) as PrintManager
     val jobName = "Invoice_${invoice.invoiceNumber}"
@@ -1760,6 +1964,7 @@ fun printInvoice(
                             <table style="margin: 0;">
                                 <tr>
                                     <td style="border: none; padding: 0; line-height: 1.5;">
+                                        ${if (businessLogo.isNotEmpty()) "<img src='$businessLogo' style='max-height: 60px; max-width: 160px; object-fit: contain; margin-bottom: 8px; display: block;' />" else ""}
                                         <span style="font-size: 22px; font-weight: bold; color: #6750A4;">${businessName}</span><br/>
                                         ${if (businessBranding.isNotEmpty()) "<span style='font-style: italic; color: #555;'>$businessBranding</span><br/>" else "Digital Ledger & Invoice Solutions<br/>"}
                                         ${if (businessPhone.isNotEmpty()) "Phone: $businessPhone<br/>" else ""}
@@ -1828,6 +2033,10 @@ fun printInvoice(
                     <p>Digital signature captured on tablet screen:</p>
                     <div class="signature-line"></div>
                     <p style="font-size: 11px; color: #777;">Authorized Representative</p>
+                </div>
+
+                <div style="margin-top: 50px; border-top: 1px dashed #ddd; padding-top: 15px; text-align: center; font-size: 11px; color: #888; font-style: italic;">
+                    This app powered by Abitalib groups and all copyrights reserved by abitalib groups
                 </div>
             </div>
         </body>
@@ -2475,6 +2684,7 @@ fun SettingsScreen(viewModel: BusinessViewModel) {
     val businessEmail by viewModel.businessEmail.collectAsStateWithLifecycle()
     val businessAddress by viewModel.businessAddress.collectAsStateWithLifecycle()
     val businessBranding by viewModel.businessBranding.collectAsStateWithLifecycle()
+    val businessLogo by viewModel.businessLogo.collectAsStateWithLifecycle()
 
     val googleDriveConnected by viewModel.googleDriveConnected.collectAsStateWithLifecycle()
     val googleDriveAccountName by viewModel.googleDriveAccountName.collectAsStateWithLifecycle()
@@ -2488,6 +2698,7 @@ fun SettingsScreen(viewModel: BusinessViewModel) {
     var editEmail by remember(businessEmail) { mutableStateOf(businessEmail) }
     var editAddress by remember(businessAddress) { mutableStateOf(businessAddress) }
     var editBranding by remember(businessBranding) { mutableStateOf(businessBranding) }
+    var editLogo by remember(businessLogo) { mutableStateOf(businessLogo) }
 
     // Backup & Sign-In simulation states
     var isConnectingDrive by remember { mutableStateOf(false) }
@@ -2516,193 +2727,10 @@ fun SettingsScreen(viewModel: BusinessViewModel) {
                     letterSpacing = 1.sp
                 )
                 Text(
-                    text = "Apna branding data, select currencies (PKR, USD, INR, Chinese Yuan) aur Google Drive backups configure karein.",
+                    text = "Apna branding data aur currency formats configure karein.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-            }
-        }
-
-        // --- 1. GOOGLE DRIVE BACKUP & RESTORE SECTION ---
-        item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(24.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
-                )
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.primary),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Cloud,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onPrimary,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-                            Column {
-                                Text(
-                                    text = "Google Drive Sync",
-                                    fontWeight = FontWeight.Bold,
-                                    style = MaterialTheme.typography.titleSmall
-                                )
-                                Text(
-                                    text = if (googleDriveConnected) "Cloud Sync Active" else "Not Connected",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = if (googleDriveConnected) Color(0xFF2E7D32) else MaterialTheme.colorScheme.outline
-                                )
-                            }
-                        }
-
-                        // Google Connection Toggle
-                        if (isConnectingDrive) {
-                            CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-                        } else {
-                            Button(
-                                onClick = {
-                                    coroutineScope.launch {
-                                        isConnectingDrive = true
-                                        kotlinx.coroutines.delay(1200) // Realistic loading
-                                        if (googleDriveConnected) {
-                                            viewModel.setGoogleDriveConnected(false, "")
-                                            Toast.makeText(context, "Google Drive account disconnected.", Toast.LENGTH_SHORT).show()
-                                        } else {
-                                            viewModel.setGoogleDriveConnected(true, "hamzajaffri.official@gmail.com")
-                                            Toast.makeText(context, "Successfully connected with hamzajaffri.official@gmail.com!", Toast.LENGTH_LONG).show()
-                                        }
-                                        isConnectingDrive = false
-                                    }
-                                },
-                                shape = RoundedCornerShape(12.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (googleDriveConnected) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
-                                )
-                            ) {
-                                Text(if (googleDriveConnected) "Disconnect" else "Connect Google Drive")
-                            }
-                        }
-                    }
-
-                    if (googleDriveConnected) {
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Card(
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f)
-                            ),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Column(modifier = Modifier.padding(12.dp)) {
-                                Text(
-                                    text = "Authorized Google Account:",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Text(
-                                    text = googleDriveAccountName.ifEmpty { "hamzajaffri.official@gmail.com" },
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        // Backup & Restore Actions
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            // Backup Button
-                            Button(
-                                onClick = {
-                                    coroutineScope.launch {
-                                        isBackingUp = true
-                                        backupProgress = 0f
-                                        while (backupProgress < 1f) {
-                                            kotlinx.coroutines.delay(150)
-                                            backupProgress += 0.15f
-                                        }
-                                        viewModel.backupDatabase()
-                                        Toast.makeText(context, "Database backup successfully uploaded to Google Drive folder 'Business Ledger Backups'!", Toast.LENGTH_LONG).show()
-                                        isBackingUp = false
-                                    }
-                                },
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(12.dp),
-                                enabled = !isBackingUp && !isRestoring
-                            ) {
-                                Icon(Icons.Default.Upload, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Cloud Backup", fontSize = 12.sp)
-                            }
-
-                            // Restore Button
-                            OutlinedButton(
-                                onClick = {
-                                    coroutineScope.launch {
-                                        isRestoring = true
-                                        restoreProgress = 0f
-                                        while (restoreProgress < 1f) {
-                                            kotlinx.coroutines.delay(150)
-                                            restoreProgress += 0.15f
-                                        }
-                                        viewModel.restoreDatabase()
-                                        Toast.makeText(context, "Cloud backup restoral complete! Please restart the app.", Toast.LENGTH_LONG).show()
-                                        isRestoring = false
-                                    }
-                                },
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(12.dp),
-                                enabled = !isBackingUp && !isRestoring
-                            ) {
-                                Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Cloud Restore", fontSize = 12.sp)
-                            }
-                        }
-
-                        if (isBackingUp) {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Column {
-                                Text("Uploading ledger snapshot to Google Drive...", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
-                                LinearProgressIndicator(progress = { backupProgress }, modifier = Modifier.fillMaxWidth())
-                            }
-                        }
-
-                        if (isRestoring) {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Column {
-                                Text("Downloading ledger snapshot from Google Drive...", fontSize = 11.sp, color = MaterialTheme.colorScheme.secondary)
-                                LinearProgressIndicator(progress = { restoreProgress }, modifier = Modifier.fillMaxWidth())
-                            }
-                        }
-                    } else {
-                        Spacer(modifier = Modifier.height(10.dp))
-                        Text(
-                            text = "💡 Google Drive connect karne ke baad aap automatic ya manual ledger snapshots directly backup aur restore kar sakte hain cloud pe.",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
             }
         }
 
@@ -2791,6 +2819,198 @@ fun SettingsScreen(viewModel: BusinessViewModel) {
                         leadingIcon = { Icon(Icons.Default.Info, contentDescription = null) }
                     )
 
+                    // --- BUSINESS LOGO SELECTION AND CUSTOM LOADER ---
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f), modifier = Modifier.padding(vertical = 12.dp))
+
+                    Text(
+                        text = "Business Logo / Brand Identity",
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Apnay brand ka logo select karein. Yeh printed PDF invoice aur billing header pe professional look dega.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    val galleryLauncher = rememberLauncherForActivityResult(
+                        contract = ActivityResultContracts.GetContent()
+                    ) { uri: Uri? ->
+                        uri?.let { selectedUri ->
+                            try {
+                                val inputStream = context.contentResolver.openInputStream(selectedUri)
+                                val file = java.io.File(context.filesDir, "business_logo.png")
+                                inputStream?.use { input ->
+                                    file.outputStream().use { output ->
+                                        input.copyTo(output)
+                                    }
+                                }
+                                editLogo = file.absolutePath
+                                Toast.makeText(context, "Logo successfully imported from gallery!", Toast.LENGTH_SHORT).show()
+                            } catch (e: Exception) {
+                                editLogo = selectedUri.toString()
+                                Toast.makeText(context, "Logo linked from gallery!", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Current Logo preview inside an elegant circle or rounded rect
+                        Card(
+                            shape = RoundedCornerShape(12.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                            modifier = Modifier.size(64.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (editLogo.isNotEmpty()) {
+                                    AsyncImage(
+                                        model = editLogo,
+                                        contentDescription = "Business Logo Preview",
+                                        modifier = Modifier.fillMaxSize().padding(4.dp),
+                                        contentScale = androidx.compose.ui.layout.ContentScale.Fit
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Default.AddAPhoto,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.outline,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Button(
+                                onClick = { galleryLauncher.launch("image/*") },
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Default.PhotoLibrary, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Upload Logo Image", fontSize = 12.sp)
+                            }
+                            if (editLogo.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                OutlinedButton(
+                                    onClick = { editLogo = "" },
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = ButtonDefaults.outlinedButtonColors(
+                                        contentColor = MaterialTheme.colorScheme.error
+                                    ),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.3f)),
+                                    modifier = Modifier.fillMaxWidth().height(32.dp),
+                                    contentPadding = PaddingValues(0.dp)
+                                ) {
+                                    Text("Remove Logo", fontSize = 11.sp)
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    OutlinedTextField(
+                        value = editLogo,
+                        onValueChange = { editLogo = it },
+                        label = { Text("Custom Logo Image URL") },
+                        placeholder = { Text("https://example.com/logo.png") },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        leadingIcon = { Icon(Icons.Default.Link, contentDescription = null) },
+                        trailingIcon = {
+                            if (editLogo.isNotEmpty()) {
+                                IconButton(onClick = { editLogo = "" }) {
+                                    Icon(Icons.Default.Clear, contentDescription = null)
+                                }
+                            }
+                        }
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text(
+                        text = "Or Choose a Premium Enterprise Preset Logo:",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    val presets = listOf(
+                        "https://images.unsplash.com/photo-1563013544-824ae1d704d3?w=150&auto=format&fit=crop&q=60" to "Mart / Mall",
+                        "https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?w=150&auto=format&fit=crop&q=60" to "Retail Shop",
+                        "https://images.unsplash.com/photo-1511556532299-8f662fc26c06?w=150&auto=format&fit=crop&q=60" to "Fashion Store",
+                        "https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=150&auto=format&fit=crop&q=60" to "Pharmacy",
+                        "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=150&auto=format&fit=crop&q=60" to "Bake / Cafe",
+                        "https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=150&auto=format&fit=crop&q=60" to "General Tech"
+                    )
+
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        items(presets) { preset ->
+                            val isSelected = editLogo == preset.first
+                            Card(
+                                shape = RoundedCornerShape(12.dp),
+                                border = androidx.compose.foundation.BorderStroke(
+                                    2.dp,
+                                    if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent
+                                ),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                                ),
+                                modifier = Modifier
+                                    .width(84.dp)
+                                    .clickable { editLogo = preset.first }
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(6.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(44.dp)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(Color.White)
+                                    ) {
+                                        AsyncImage(
+                                            model = preset.first,
+                                            contentDescription = preset.second,
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = preset.second,
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        textAlign = TextAlign.Center,
+                                        maxLines = 1,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
+                        }
+                    }
+
                     Spacer(modifier = Modifier.height(16.dp))
 
                     // Live Invoice Header preview block
@@ -2816,6 +3036,20 @@ fun SettingsScreen(viewModel: BusinessViewModel) {
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.Top
                             ) {
+                                if (editLogo.isNotEmpty()) {
+                                    AsyncImage(
+                                        model = editLogo,
+                                        contentDescription = "Logo Live Preview",
+                                        modifier = Modifier
+                                            .size(48.dp)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(Color.White)
+                                            .padding(2.dp)
+                                            .align(Alignment.CenterVertically),
+                                        contentScale = androidx.compose.ui.layout.ContentScale.Fit
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                }
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
                                         text = editName.ifEmpty { "Business Toolkit Pro" },
@@ -2856,7 +3090,7 @@ fun SettingsScreen(viewModel: BusinessViewModel) {
 
                     Button(
                         onClick = {
-                            viewModel.setBusinessProfile(editName, editPhone, editEmail, editAddress, editBranding)
+                            viewModel.setBusinessProfile(editName, editPhone, editEmail, editAddress, editBranding, editLogo)
                             Toast.makeText(context, "Business Branding details saved successfully!", Toast.LENGTH_SHORT).show()
                         },
                         modifier = Modifier.fillMaxWidth(),
@@ -3017,6 +3251,28 @@ fun SettingsScreen(viewModel: BusinessViewModel) {
                         )
                     }
                 }
+            }
+        }
+
+        item {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "This app powered by Abitalib groups",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    textAlign = TextAlign.Center
+                )
+                Text(
+                    text = "All copyrights reserved by abitalib groups",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                    textAlign = TextAlign.Center
+                )
             }
         }
     }

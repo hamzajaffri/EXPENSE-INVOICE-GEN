@@ -99,6 +99,9 @@ class BusinessViewModel(
     val businessBranding: StateFlow<String> = preferenceStore.businessBrandingFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
 
+    val businessLogo: StateFlow<String> = preferenceStore.businessLogoFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
+
     val googleDriveConnected: StateFlow<Boolean> = preferenceStore.googleDriveConnectedFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
@@ -139,6 +142,51 @@ class BusinessViewModel(
     // --- INVOICE MAKER TEMPORARY DRAFT STATE ---
     private val _draftItems = MutableStateFlow<List<InvoiceItem>>(emptyList())
     val draftItems: StateFlow<List<InvoiceItem>> = _draftItems.asStateFlow()
+
+    private val _draftCustomerName = MutableStateFlow("")
+    val draftCustomerName: StateFlow<String> = _draftCustomerName.asStateFlow()
+
+    private val _draftCustomerPhone = MutableStateFlow("")
+    val draftCustomerPhone: StateFlow<String> = _draftCustomerPhone.asStateFlow()
+
+    private val _draftSelectedCustomerId = MutableStateFlow<Int?>(null)
+    val draftSelectedCustomerId: StateFlow<Int?> = _draftSelectedCustomerId.asStateFlow()
+
+    private val _draftTaxRate = MutableStateFlow("18.0")
+    val draftTaxRate: StateFlow<String> = _draftTaxRate.asStateFlow()
+
+    private val _draftDiscount = MutableStateFlow("0.0")
+    val draftDiscount: StateFlow<String> = _draftDiscount.asStateFlow()
+
+    private val _draftShipping = MutableStateFlow("0.0")
+    val draftShipping: StateFlow<String> = _draftShipping.asStateFlow()
+
+    private val _draftPaymentMethod = MutableStateFlow("Cash")
+    val draftPaymentMethod: StateFlow<String> = _draftPaymentMethod.asStateFlow()
+
+    private val _draftIsPendingPayment = MutableStateFlow(false)
+    val draftIsPendingPayment: StateFlow<Boolean> = _draftIsPendingPayment.asStateFlow()
+
+    fun updateDraftCustomerName(name: String) { _draftCustomerName.value = name }
+    fun updateDraftCustomerPhone(phone: String) { _draftCustomerPhone.value = phone }
+    fun updateDraftSelectedCustomerId(id: Int?) { _draftSelectedCustomerId.value = id }
+    fun updateDraftTaxRate(rate: String) { _draftTaxRate.value = rate }
+    fun updateDraftDiscount(disc: String) { _draftDiscount.value = disc }
+    fun updateDraftShipping(ship: String) { _draftShipping.value = ship }
+    fun updateDraftPaymentMethod(method: String) { _draftPaymentMethod.value = method }
+    fun updateDraftIsPendingPayment(pending: Boolean) { _draftIsPendingPayment.value = pending }
+
+    fun clearDraftInvoice() {
+        clearDraftItems()
+        _draftCustomerName.value = ""
+        _draftCustomerPhone.value = ""
+        _draftSelectedCustomerId.value = null
+        _draftTaxRate.value = "18.0"
+        _draftDiscount.value = "0.0"
+        _draftShipping.value = "0.0"
+        _draftPaymentMethod.value = "Cash"
+        _draftIsPendingPayment.value = false
+    }
 
     fun addDraftItem(product: Product, qty: Int) {
         val existingIndex = _draftItems.value.indexOfFirst { it.productId == product.id }
@@ -209,7 +257,7 @@ class BusinessViewModel(
 
     fun createInvoice(invoice: Invoice) = viewModelScope.launch {
         repository.insertInvoice(invoice, _draftItems.value)
-        clearDraftItems()
+        clearDraftInvoice()
     }
 
     fun deleteInvoice(invoice: Invoice) = viewModelScope.launch {
@@ -254,8 +302,8 @@ class BusinessViewModel(
         preferenceStore.setBiometricEnabled(enabled)
     }
 
-    fun setBusinessProfile(name: String, phone: String, email: String, address: String, branding: String) = viewModelScope.launch {
-        preferenceStore.setBusinessProfile(name, phone, email, address, branding)
+    fun setBusinessProfile(name: String, phone: String, email: String, address: String, branding: String, logo: String) = viewModelScope.launch {
+        preferenceStore.setBusinessProfile(name, phone, email, address, branding, logo)
     }
 
     fun setGoogleDriveConnected(connected: Boolean, accountName: String) = viewModelScope.launch {
